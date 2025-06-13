@@ -12,7 +12,7 @@ import chess
 MAX_ENGINE_DEPTH = 5  # maximum search depth for the main Negamax algorithm
 QUIESCENCE_DEPTH = 3  # maximum depth for the quiescence search algorithm
 NULL_MOVE_REDUCTION = 2  # depth reduction for null-move pruning
-PATH_TO_OPENING_BOOK = "./engines/komodo.bin"  # path to the opening book used (in Polyglot format)
+PATH_TO_OPENING_BOOK = ""  # path to the opening book used (in Polyglot format) - if empty, no opening book will be used
 
 
 player_coefs = {chess.WHITE: 1, chess.BLACK: -1}
