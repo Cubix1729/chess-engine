@@ -25,14 +25,25 @@ piece_values = {
     chess.QUEEN: 900,
 }
 
-black_pawn_pst = [
+black_pawn_mg_pst = [
     [0, 0, 0, 0, 0, 0, 0, 0],
-    [50, 50, 50, 50, 50, 50, 50, 50],
+    [40, 40, 40, 40, 40, 40, 40, 40],
     [10, 10, 20, 30, 30, 20, 10, 10],
     [5, 5, 10, 25, 25, 10, 5, 5],
     [0, 0, 0, 20, 20, 0, 0, 0],
     [5, -5, -10, 0, 0, -10, -5, 5],
     [5, 10, 10, -20, -20, 10, 10, 5],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+]
+
+black_pawn_eg_pst = [
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [40, 40, 40, 40, 40, 40, 40, 40],
+    [20, 20, 20, 20, 20, 20, 20, 20],
+    [10, 10, 10, 10, 10, 10, 10, 10],
+    [0, 0, 0, 20, 20, 0, 0, 0],
+    [-5, -5, -5, -5, -5, -5, -5, 5],
+    [-10, -10, -10, -10, -10, -10, -10, -10],
     [0, 0, 0, 0, 0, 0, 0, 0],
 ]
 
@@ -102,6 +113,16 @@ black_king_eg_pst = [
     [-50, -40, -30, -20, -20, -30, -40, -50],
 ]
 
+pawn_mg_pst = {
+    chess.WHITE: [row[::-1] for row in black_pawn_mg_pst][::-1],
+    chess.BLACK: black_pawn_mg_pst,
+}  # for opening and middlegame
+
+pawn_eg_pst = {
+    chess.WHITE: [row[::-1] for row in black_pawn_eg_pst][::-1],
+    chess.BLACK: black_pawn_eg_pst,
+}  # for endgame
+
 king_mg_pst = {
     chess.WHITE: [row[::-1] for row in black_king_mg_pst][::-1],
     chess.BLACK: black_king_mg_pst,
@@ -113,10 +134,7 @@ king_eg_pst = {
 }  # for endgame
 
 piece_square_tables = {
-    chess.PAWN: {
-        chess.WHITE: [row[::-1] for row in black_pawn_pst[::-1]],
-        chess.BLACK: black_pawn_pst,
-    },
+    chess.PAWN: pawn_mg_pst,
     chess.KNIGHT: {
         chess.WHITE: [row[::-1] for row in black_knight_pst[::-1]],
         chess.BLACK: black_knight_pst,
@@ -498,8 +516,9 @@ def get_move_score(pos: chess.Board, move: chess.Move, ply: int) -> int:
     score = get_capture_score(pos, move)
     if pos.gives_check(move):
         score += 50
-    if move in killer_moves[ply]:
-        score += 1000
+    if ply is not None:
+        if move in killer_moves[ply]:
+            score += 1000
     score += (
         history_table[move.from_square][move.to_square] // 10
     )  # prioritise other moves (killer, captures, etc...)
@@ -511,7 +530,7 @@ def get_move_score(pos: chess.Board, move: chess.Move, ply: int) -> int:
     return score
 
 
-def sorted_legal_moves(pos: chess.Board, ply: int) -> Generator[chess.Move, None, None]:
+def sorted_legal_moves(pos: chess.Board, ply: int = None) -> Generator[chess.Move, None, None]:
     """Gets the legal moves in a position, with ordering"""
     legal_moves = list(pos.legal_moves)
     return sorted(legal_moves, key=lambda move: get_move_score(pos, move, ply), reverse=True)
@@ -537,7 +556,7 @@ def quiescence(
     if alpha < stand_pat:
         alpha = stand_pat
 
-    for move in pos.legal_moves:
+    for move in sorted_legal_moves(pos):
         if not (
             pos.is_capture(move) or move.promotion is not None or pos.gives_check(move)
         ):  # quiet move (not a capture, check or promotion)
@@ -660,7 +679,7 @@ def nega_max(
 
 
 def iterative_deepening(
-    pos: chess.Board, max_time: float, max_depth: int = MAX_ENGINE_DEPTH
+    pos: chess.Board, max_time: float, max_depth: int = MAX_ENGINE_DEPTH, force_interrupt: bool = True
 ) -> chess.Move:
     """Applies iterative deepening to find the best move in a limited time"""
     global nodes_searched
@@ -669,7 +688,7 @@ def iterative_deepening(
     t1 = time.time()
     time_stop = t1 + max_time
     for depth in range(1, max_depth + 1):
-        if depth > 1:
+        if depth > 1 and force_interrupt:
             move, score = nega_max(pos, depth, color=player_coefs[pos.turn], time_stop=time_stop)
         else:  # NOTE: no timeout limit for depth 1, so best_move is always defined
             move, score = nega_max(pos, depth, color=player_coefs[pos.turn])
@@ -743,6 +762,7 @@ def main() -> None:
                 max_time = min(time_left / 40 + increment, time_left / 2 - 1)
 
             elif len(args) == 3 and args[1] == "movetime":
+                time_left = None
                 max_time = int(args[2]) / 1000
 
             else:
@@ -765,14 +785,22 @@ def main() -> None:
                     time.sleep(1)  # simulate thinking time
 
             if best_move is None:  # no opening book move, so perform normal search
-                best_move = iterative_deepening(board, max_time=max_time)
+                if time_left is not None and time_left <= 45:  # less than 45s left on the clock
+                    best_move = iterative_deepening(board, max_time=max_time)  # force interrupt in Negamax (default)
+                else:
+                    # Here, we don't force interrupt in Negamax when timeout is reached, but
+                    # we reduce the time limit in consequence
+                    best_move = iterative_deepening(board, max_time=max_time * 0.3, force_interrupt=False)
+
 
             print(f"bestmove {best_move}")
 
+            # Endgame switch logic
             if not is_in_endgame:
                 if in_endgame(board):
                     is_in_endgame = True
                     piece_square_tables[chess.KING] = king_eg_pst  # switch to endgame king table
+                    piece_square_tables[chess.PAWN] = pawn_eg_pst  # switch to endgame pawn table
 
 
 if __name__ == "__main__":

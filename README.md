@@ -8,7 +8,7 @@ This project is a small Python chess engine with a UCI interface, made for fun.
 
 You can play games against the engine on [lichess.org](https://lichess.org).
 In order to do that, just challenge [@SomePythonBot](https://lichess.org/@/SomePythonBot), and enjoy the game!
-Currently, it is rated at around 1450~1650 elo.
+Currently, it is rated at around 1600~1700 elo.
 Note that the bot does not accept correspondence games.
 
 If you are curious, you can also clone the repo, install `python-chess`, and run the engine locally,
@@ -59,7 +59,7 @@ taken from [this repo](https://github.com/gmcheems-org/free-opening-books).
 
 My bot cannot compare with the vast majority of other bots, as it is quite weak. So what could be improved?
 
-I think the main issue is the depth it searches at on average, which is only about 2~5 for rapid or classical games.
+I think the main issue is the depth it searches at on average, which is only about 3~6 for rapid or classical games.
 This is very low, and causes the engine to miss most long-term strategies.
 
 According to me, the main two reasons the depth is quite low are:
@@ -69,7 +69,7 @@ According to me, the main two reasons the depth is quite low are:
  - **The lack of optmisation**: Python isn't particularly fast (even if the Lichess version runs on PyPy),
  and the engine does not use efficient techniques like bitboards
 
-Still, I am happy with my engine. After all, a level around 1500 elo isn't so bad.
+Still, I am happy with my engine. After all, a level around 1600 elo isn't so bad.
 Anyway, it destroys me whenever I play against it (even if that's not significant given my chess level).
 
 ## Contributing
