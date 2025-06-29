@@ -9,7 +9,7 @@ import chess
 
 # Main constants
 
-MAX_ENGINE_DEPTH = 5  # maximum search depth for the main Negamax algorithm
+MAX_ENGINE_DEPTH = 7  # maximum search depth for the main Negamax algorithm
 QUIESCENCE_DEPTH = 3  # maximum depth for the quiescence search algorithm
 NULL_MOVE_REDUCTION = 2  # depth reduction for null-move pruning
 PATH_TO_OPENING_BOOK = ""  # path to the opening book used (in Polyglot format) - if empty, no opening book will be used
@@ -482,11 +482,11 @@ def evaluate_pos(pos: chess.Board) -> int:
             pawn_score = calculate_pawn_structure(pos)
         score = 0
         score += piece_score
-        score += calculate_king_safety(pos, chess.WHITE, white_king_pos)
-        score += calculate_king_safety(pos, chess.BLACK, black_king_pos)
         if not is_in_endgame:  # still in middlegame
             # score += calculate_rook_activity(pos)  # TODO: reactivate (with more optimisation)
             score += calculate_activity_score(pos)
+            score += calculate_king_safety(pos, chess.WHITE, white_king_pos)  # king safety is a lot less important in the endgame
+            score += calculate_king_safety(pos, chess.BLACK, black_king_pos)
         score += calculate_center_control(pos)
         score += pawn_score
         return score
@@ -580,6 +580,7 @@ def nega_max(
     beta: int = inf,
     color: int = +1,
     time_stop: int = +inf,
+    initial_depth: int = MAX_ENGINE_DEPTH,
     ply: int = 0,
 ) -> tuple[chess.Move, int]:
     """The main AI (NegaMax) algorithm with alpha-beta pruning"""
@@ -607,43 +608,78 @@ def nega_max(
     best_move = None
     pv_line = None
 
-    for move in sorted_legal_moves(pos, ply):
-        if time.time() >= time_stop:
-            return None, None
+    # Null move pruning (WIP)
+    if depth >= 3 and not pos.is_check() and not is_in_endgame and depth != initial_depth:
+        pos.push(chess.Move.null())  # null move
+        _, score = nega_max(
+            pos=pos,
+            depth=depth - 1 - NULL_MOVE_REDUCTION,
+            alpha=-beta,
+            beta=-(beta - 1),
+            color=-color,
+            time_stop=time_stop,
+            initial_depth=initial_depth,
+            ply=ply + 1,
+        )
+        if score == "Timeout":  # prevent error when timeout reached
+            return None, "Timeout"
+        score = -score
+        pos.pop()
 
-        # Null-move pruning
-        if depth >= 3 and not pos.is_check() and not is_in_endgame:
-            pos.push(chess.Move.null())  # null-move
+        if score > beta:
+            return None, score
+
+    for move_index, move in enumerate(sorted_legal_moves(pos, ply)):
+        if time.time() >= time_stop:
+            return None, "Timeout"
+
+        pos.push(move)
+
+        if move_index > 3 and depth >= 3 and not pos.is_check() and not pos.is_capture(move):
+            reduction = 1 if move_index < 10 else 2
             _, score = nega_max(
                 pos=pos,
-                depth=depth - 1 - NULL_MOVE_REDUCTION,
+                depth=depth - 1 - reduction,
+                alpha=-alpha - 1,
+                beta=-alpha,
+                color=-color,
+                time_stop=time_stop,
+                initial_depth=initial_depth,
+                ply=ply + 1
+            )
+            score = -score
+            if score == "Timeout":
+                return None, "Timeout"
+
+            if score > alpha:
+                _, score = nega_max(
+                    pos=pos,
+                    depth=depth - 1,
+                    alpha=-beta,
+                    beta=-alpha,
+                    color=-color,
+                    time_stop=time_stop,
+                    initial_depth=initial_depth,
+                    ply=ply + 1,
+                )
+                if score == "Timeout":
+                    return None, "Timeout"
+                score = -score
+
+        else:
+            _, score = nega_max(
+                pos=pos,
+                depth=depth - 1,
                 alpha=-beta,
                 beta=-alpha,
                 color=-color,
                 time_stop=time_stop,
+                initial_depth=initial_depth,
                 ply=ply + 1,
             )
-            if score is None:  # prevent error when timeout reached
-                return None, None
+            if score == "Timeout":
+                return None, "Timeout"
             score = -score
-            pos.pop()
-
-            if score >= beta:
-                return None, beta  # beta cutoff
-
-        pos.push(move)
-        _, score = nega_max(
-            pos=pos,
-            depth=depth - 1,
-            alpha=-beta,
-            beta=-alpha,
-            color=-color,
-            time_stop=time_stop,
-            ply=ply + 1,
-        )
-        if score is None:  # prevent error when timeout reached
-            return None, None
-        score = -score
 
         pos.pop()
         if score > max_val:
@@ -689,9 +725,20 @@ def iterative_deepening(
     time_stop = t1 + max_time
     for depth in range(1, max_depth + 1):
         if depth > 1 and force_interrupt:
-            move, score = nega_max(pos, depth, color=player_coefs[pos.turn], time_stop=time_stop)
+            move, score = nega_max(
+                pos,
+                depth,
+                color=player_coefs[pos.turn],
+                time_stop=time_stop,
+                initial_depth=depth
+            )
         else:  # NOTE: no timeout limit for depth 1, so best_move is always defined
-            move, score = nega_max(pos, depth, color=player_coefs[pos.turn])
+            move, score = nega_max(
+                pos,
+                depth,
+                color=player_coefs[pos.turn],
+                initial_depth=depth
+            )
         if move is not None:  # no timeout during search
             best_move = move
             time_elapsed = time.time() - t1
@@ -717,11 +764,13 @@ def iterative_deepening(
 def main() -> None:
     """Main UCI interface"""
     global killer_moves, history_table, is_in_endgame
+    chess960 = False
     board = chess.Board()
     while True:
         args = input().split()
         if args[0] == "uci":
             print("id name SomePythonBot")
+            print("option name UCI_Chess960 type check default false")
             print("uciok")
 
         elif args[0] == "isready":
@@ -740,13 +789,16 @@ def main() -> None:
         elif args[0] == "quit":
             break
 
-        elif args[:2] == ["position", "startpos"]:
-            if len(args) == 2:  # starting position
-                board = chess.Board()
+        elif args[0] == "position":
+            if len(args) == 2 and args[1] == "startpos":  # starting position
+                board = chess.Board(chess960=chess960)
             elif args[1] == "fen":  # from FEN
-                board = chess.Board(args[2])
-            elif args[2] == "moves":  # from sequence of moves
-                board = chess.Board()
+                board = chess.Board(" ".join(args[2:8]), chess960=chess960)
+                if "moves" in args:
+                    for move_str in args[args.index("moves") + 1:]:
+                        board.push_uci(move_str)
+            elif args[2] == "moves" and args[1] == "startpos":  # from sequence of moves
+                board = chess.Board(chess960=chess960)
                 for move_str in args[3:]:
                     board.push_uci(move_str)
 
@@ -801,6 +853,10 @@ def main() -> None:
                     is_in_endgame = True
                     piece_square_tables[chess.KING] = king_eg_pst  # switch to endgame king table
                     piece_square_tables[chess.PAWN] = pawn_eg_pst  # switch to endgame pawn table
+
+        elif args[:2] == ["setoption", "name"]:
+            if args[2:] == ["UCI_Chess960", "value", "true"]:
+                chess960 = True
 
 
 if __name__ == "__main__":

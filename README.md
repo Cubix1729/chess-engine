@@ -1,5 +1,11 @@
 # Python Chess Engine
 
+[![Lichess bullet rating](https://lichess-shield.vercel.app/api?username=somepythonbot&format=bullet)](https://lichess.org/@/somepythonbot/perf/bullet)
+[![Lichess blitz rating](https://lichess-shield.vercel.app/api?username=somepythonbot&format=blitz)](https://lichess.org/@/somepythonbot/perf/blitz)
+[![Lichess rapid rating](https://lichess-shield.vercel.app/api?username=somepythonbot&format=rapid)](https://lichess.org/@/somepythonbot/perf/rapid)
+[![Lichess classical rating](https://lichess-shield.vercel.app/api?username=somepythonbot&format=classical)](https://lichess.org/@/somepythonbot/perf/classical)
+
+
 This project is a small Python chess engine with a UCI interface, made for fun.
 
 > This program is very minimalistic and its level isn't very high. Its purpose is only to be a simple and fun project.
@@ -38,6 +44,7 @@ Regarding the search logic, it uses:
  - [Quiescence search](https://www.chessprogramming.org/Quiescence_Search) for captures, checks and promotions
  - A [transposition table](https://www.chessprogramming.org/Transposition_Table) for caching previous search results
  - [Null-move pruning](https://www.chessprogramming.org/Null_Move_Pruning)
+ - [Late move reductions]()
  - **Move ordering**:
      - Captures sorting with [MVV-LVA](https://www.chessprogramming.org/MVV-LVA) (Most Valuable Victim - Least Valuable Attacker)
      - [Killer move heuristic](https://www.chessprogramming.org/Killer_Heuristic)
